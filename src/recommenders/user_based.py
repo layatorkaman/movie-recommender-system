@@ -224,42 +224,4 @@ def recommend_movies(
             .drop(columns=["raw_prediction"])
             .reset_index(drop=True)
     )
-def test_recommend_movies():
-    from src.recommenders.user_based import recommend_movies
 
-    ratings = pd.DataFrame({
-        "userId": [1, 1, 1, 2, 2, 2, 3, 3, 3],
-        "movieId": [10, 20, 30, 10, 20, 40, 10, 20, 50],
-        "rating":  [5, 4, 1, 5, 4, 5, 4, 3, 5],
-    })
-
-    movies = pd.DataFrame({
-        "movieId": [10, 20, 30, 40, 50],
-        "title": [
-            "Movie A",
-            "Movie B",
-            "Movie C",
-            "Movie D",
-            "Movie E",
-        ],
-    })
-
-    matrix = build_user_item_matrix(ratings)
-
-    recommendations = recommend_movies(
-        matrix,
-        movies,
-        user_id=1,
-        n=2,
-        min_common_ratings=2,
-    )
-
-    assert len(recommendations) == 2
-    assert list(recommendations.columns) == [
-        "movie_id",
-        "title",
-        "predicted_rating",
-    ]
-    assert 10 not in recommendations["movie_id"].values
-    assert 20 not in recommendations["movie_id"].values
-    assert recommendations["predicted_rating"].is_monotonic_decreasing

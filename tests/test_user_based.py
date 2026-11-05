@@ -4,7 +4,8 @@ import pandas as pd
 from src.recommenders.user_based import (
     build_user_item_matrix,
     calculate_user_similarity,
-    predict_rating
+    predict_rating,
+    recommend_movies,
 )
 
 
@@ -60,20 +61,13 @@ def test_similarity_returns_pearson_correlation():
 
     assert similarity is not None
     assert abs(similarity - (-1.0)) < 1e-9
+
+
 def test_predict_rating():
     ratings = pd.DataFrame({
-        "userId": [
-            1, 1, 1,
-            2, 2, 2, 2,
-        ],
-        "movieId": [
-            10, 20, 30,
-            10, 20, 30, 40,
-        ],
-        "rating": [
-            1.0, 2.0, 3.0,
-            1.0, 2.0, 3.0, 4.0,
-        ],
+        "userId": [1, 1, 1, 2, 2, 2, 2],
+        "movieId": [10, 20, 30, 10, 20, 30, 40],
+        "rating": [1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 4.0],
     })
 
     matrix = build_user_item_matrix(ratings)
@@ -86,6 +80,8 @@ def test_predict_rating():
     )
 
     assert prediction == 3.5
+
+
 def test_predict_rating_unknown_user():
     ratings = pd.DataFrame({
         "userId": [1, 2],
@@ -141,7 +137,6 @@ def test_predict_rating_without_positive_neighbors():
     assert prediction is None
 
 
-
 def test_predict_rating_does_not_exceed_maximum():
     ratings = pd.DataFrame({
         "userId": [1, 1, 1, 2, 2, 2, 2],
@@ -181,12 +176,10 @@ def test_predict_rating_does_not_go_below_minimum():
 
 
 def test_recommend_movies():
-    from src.recommenders.user_based import recommend_movies
-
     ratings = pd.DataFrame({
         "userId": [1, 1, 1, 2, 2, 2, 3, 3, 3],
         "movieId": [10, 20, 30, 10, 20, 40, 10, 20, 50],
-        "rating":  [5, 4, 1, 5, 4, 5, 4, 3, 5],
+        "rating": [5, 4, 1, 5, 4, 5, 4, 3, 5],
     })
 
     movies = pd.DataFrame({
@@ -209,7 +202,6 @@ def test_recommend_movies():
         n=2,
         min_common_ratings=2,
         min_movie_ratings=1,
-
     )
 
     assert len(recommendations) == 2
