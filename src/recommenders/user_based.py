@@ -19,17 +19,12 @@ def build_user_item_matrix(ratings: pd.DataFrame) -> pd.DataFrame:
 
 
 def calculate_user_similarity(
-        user_item_matrix: pd.DataFrame,
-        user_id: int,
-        other_user_id: int,
-        min_common_ratings: int = 3,
+    user_item_matrix: pd.DataFrame,
+    user_id: int,
+    other_user_id: int,
+    min_common_ratings: int = 3,
 ) -> float | None:
-    """
-    Calculate Pearson similarity between two users.
 
-    Return None when there are not enough common ratings
-    or when Pearson correlation cannot be calculated.
-    """
     common_ratings = user_item_matrix.loc[
         [user_id, other_user_id]
     ].dropna(axis=1)
@@ -37,16 +32,18 @@ def calculate_user_similarity(
     if common_ratings.shape[1] < min_common_ratings:
         return None
 
-    similarity = common_ratings.loc[user_id].corr(
-        common_ratings.loc[other_user_id],
-        method="pearson",
-    )
+    user_ratings = common_ratings.loc[user_id]
+    other_ratings = common_ratings.loc[other_user_id]
+
+    if user_ratings.nunique() < 2 or other_ratings.nunique() < 2:
+        return None
+
+    similarity = user_ratings.corr(other_ratings)
 
     if pd.isna(similarity):
         return None
 
     return float(similarity)
-
 
 
 def predict_rating(
@@ -112,18 +109,26 @@ def predict_rating(
     return float(max(0.5, min(5.0, predicted_rating)))
 
 
+
 def recommend_movies(
     user_item_matrix: pd.DataFrame,
     movies: pd.DataFrame,
     user_id: int,
     n: int = 10,
     min_common_ratings: int = 3,
+    min_movie_ratings: int = 20,
 ) -> pd.DataFrame:
     """
     Recommend the top-N unseen movies for a user.
+    User similarities are calculated only once.
     """
 
-    result_columns = ["movie_id", "title", "predicted_rating"]
+    result_columns = [
+        "movie_id",
+        "title",
+        "predicted_rating",
+        "raw_prediction",
+    ]
 
     if user_id not in user_item_matrix.index:
         return pd.DataFrame(columns=result_columns)
@@ -136,51 +141,89 @@ def recommend_movies(
     if n <= 0:
         raise ValueError("n must be greater than zero.")
 
-    # Find movies the user has not rated yet.
+    target_user_mean = user_item_matrix.loc[user_id].mean()
+    user_means = user_item_matrix.mean(axis=1)
+
+    # Calculate similarities only once.
+    similarities = {}
+
+    for other_user_id in user_item_matrix.index:
+        if other_user_id == user_id:
+            continue
+
+        similarity = calculate_user_similarity(
+            user_item_matrix,
+            user_id,
+            other_user_id,
+            min_common_ratings=min_common_ratings,
+        )
+
+        if similarity is not None and similarity > 0:
+            similarities[other_user_id] = similarity
+
+    # Find movies the user has not rated.
     unseen_movie_ids = user_item_matrix.columns[
         user_item_matrix.loc[user_id].isna()
     ]
+
+    movie_titles = (
+        movies.drop_duplicates(subset=["movieId"])
+        .set_index("movieId")["title"]
+    )
 
     recommendations = []
 
     for movie_id in unseen_movie_ids:
 
-        predicted_rating = predict_rating(
-            user_item_matrix,
-            user_id,
-            movie_id,
-            min_common_ratings=min_common_ratings,
+        if movie_id not in movie_titles.index:
+            continue
+
+        movie_ratings = user_item_matrix[movie_id].dropna()
+        if len(movie_ratings) < min_movie_ratings:
+            continue
+
+        weighted_sum = 0.0
+        similarity_sum = 0.0
+
+        for other_user_id, rating in movie_ratings.items():
+
+            similarity = similarities.get(other_user_id)
+
+            if similarity is None:
+                continue
+
+            weighted_sum += similarity * (
+                rating - user_means.loc[other_user_id]
+            )
+            similarity_sum += similarity
+
+        if similarity_sum == 0:
+            continue
+
+        raw_prediction = (
+                target_user_mean + weighted_sum / similarity_sum
         )
 
-        if predicted_rating is None:
-            continue
-
-        movie_info = movies.loc[movies["movieId"] == movie_id]
-
-        if movie_info.empty:
-            continue
-
-        title = movie_info.iloc[0]["title"]
+        predicted_rating = max(0.5, min(5.0, raw_prediction))
 
         recommendations.append({
             "movie_id": movie_id,
-            "title": title,
-            "predicted_rating": predicted_rating,
+            "title": movie_titles.loc[movie_id],
+            "predicted_rating": float(predicted_rating),
+            "raw_prediction": float(raw_prediction),
         })
-
     recommendations_df = pd.DataFrame(
         recommendations,
         columns=result_columns,
     )
-
     return (
-        recommendations_df
-        .sort_values("predicted_rating", ascending=False)
-        .head(n)
-        .reset_index(drop=True)
+        recommendations_df.sort_values(
+            "raw_prediction", ascending=False
+        )
+            .head(n)
+            .drop(columns=["raw_prediction"])
+            .reset_index(drop=True)
     )
-
-
 def test_recommend_movies():
     from src.recommenders.user_based import recommend_movies
 

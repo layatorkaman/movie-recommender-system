@@ -208,6 +208,8 @@ def test_recommend_movies():
         user_id=1,
         n=2,
         min_common_ratings=2,
+        min_movie_ratings=1,
+
     )
 
     assert len(recommendations) == 2
